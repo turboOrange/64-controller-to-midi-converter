@@ -1,0 +1,42 @@
+# ── Build output directories ──────────────────────────────────────────────────
+firmware/build/
+firmware/build_sim/
+firmware/tests/build/
+
+# ── CMake generated files (outside build dirs) ────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# ── Compiled object files & binaries ─────────────────────────────────────────
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.uf2
+*.map
+*.dis
+
+# ── Ninja ─────────────────────────────────────────────────────────────────────
+.ninja_deps
+.ninja_log
+build.ninja
+
+# ── Python byte-code ──────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+
+# ── Editor / OS noise ─────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# ── Nix direnv ────────────────────────────────────────────────────────────────
+.direnv/
+result
+

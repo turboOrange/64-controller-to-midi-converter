@@ -28,6 +28,7 @@ The RP2040 reads button and joystick inputs from up to **four simultaneous N64 c
   - [Building the Firmware](#building-the-firmware)
   - [Flashing](#flashing)
   - [Debugging](#debugging)
+  - [Unit Tests](#unit-tests)
   - [Generating API Docs](#generating-api-docs)
   - [Configuration Reference](#configuration-reference)
 - [Project Architecture](#project-architecture)
@@ -324,6 +325,56 @@ git submodule update --init --recursive
 
 ---
 
+### Interactive MIDI Tester (no hardware required)
+
+A native host-side tool lets you press buttons on a virtual N64 controller and verify every resulting MIDI event — no RP2040, no physical controller needed.
+
+```
+┌─ N64 Controller ─────────────────────────┐┌─ MIDI Events (newest at bottom) ──────────┐
+│ Octave shift: +0                         ││ INIT      Program Change GM#80 ch 0-3     │
+│  [L](Q)                        [R](E)    ││                                            │
+│       [^]   .---.  [C^](I)  [A](J)      ││ NOTE ON   ch0   D4  (62)  vel 80  90 3E 50│
+│  [<]  [>]   | o |  [C<](U) [C>](O)      ││ PITCH BND ch0   +2730     E0 2A 55        │
+│       [v]   '---'  [Cv](M)  [B](K)      ││ NOTE OFF  ch0   D4  (62)  80 3E 00        │
+│  [Z](Space)       [Start](Enter)         ││                                            │
+│ Stick: X=  +0  Y= +85                   ││                                            │
+└──────────────────────────────────────────┘└────────────────────────────────────────────┘
+ 64-to-MIDI Tester  |  ch 0  |  oct +0  |  events: 4  |  toggle keys on/off  |  Esc=quit
+```
+
+Active buttons light up **green**. The right panel shows colour-coded decoded MIDI events with their raw hex bytes.
+
+**Key layout (all keys toggle on/off):**
+
+| Key | N64 Input | Key | N64 Input |
+|---|---|---|---|
+| `J` | A button | `K` | B button |
+| `I` | C-Up | `M` | C-Down |
+| `U` | C-Left | `O` | C-Right |
+| `Space` | Z (sustain) | `Enter` | Start (MIDI Panic) |
+| `Q` | L shoulder (octave −) | `E` | R shoulder (octave +) |
+| Arrow keys | D-pad | `W`/`A`/`S`/`D` | Joystick axes |
+| `Esc` | Quit | | |
+
+**Build and run:**
+
+```bash
+cd firmware/tools/n64_midi_tester
+cmake -B build -G Ninja
+ninja -C build
+./build/n64_midi_tester
+```
+
+**Optional — pipe MIDI to `fluidsynth` for audio:**
+
+```bash
+mkfifo /tmp/midi_pipe
+fluidsynth -a alsa -g 1.0 /usr/share/soundfonts/FluidR3_GM.sf2 /tmp/midi_pipe &
+./build/n64_midi_tester --midi-out /tmp/midi_pipe
+```
+
+---
+
 ### Flashing
 
 #### Method 1 — UF2 drag-and-drop / picotool
@@ -367,6 +418,46 @@ minicom -b 115200 -D /dev/ttyACM0
 ```
 
 > Note: UART1 is fully owned by `midi_uart_lib` for MIDI output. Re-enable `stdio_usb` in `CMakeLists.txt` for debug `printf` output over the USB CDC serial port instead.
+
+---
+
+### Unit Tests
+
+The `firmware/tests/` directory contains a host-side [Catch2 v3](https://github.com/catchorg/Catch2) test suite that exercises the core `Mapping` logic without any RP2040, Joybus, or FreeRTOS dependencies.
+
+**What is tested:**
+
+| Tag | Coverage |
+|---|---|
+| `[note_buttons]` | A / B / C-Up / C-Down / C-Left / C-Right → Note On / Note Off with correct pitches |
+| `[octave]` | L / R shoulder octave shift, ±3 clamp, note-off snapshot correctness |
+| `[sustain]` | Z button → CC64 on / off |
+| `[panic]` | Start → CC123, octave and note-tracking reset |
+| `[dpad]` | D-pad directions → correct GM Program Change numbers |
+| `[joystick]` | Pitch Bend (X-axis), Modulation (Y-axis), deadzone, wire encoding (14-bit LSB/MSB) |
+| `[velocity]` | Joystick distance → MIDI velocity scaling, range validation |
+| `[channel]` | All events carry the channel bound at `Mapping` construction |
+| `[edge_cases]` | Simultaneous six-button chords, held-button idempotency, 7-bit data byte bounds |
+
+**Build and run (inside `nix develop`):**
+
+```bash
+cd firmware/tests
+cmake -B build -G Ninja
+ninja -C build
+./build/n64_midi_tests            # run all tests
+./build/n64_midi_tests [octave]   # run a single tag
+./build/n64_midi_tests -v         # verbose output
+```
+
+**With CTest:**
+
+```bash
+cd firmware/tests/build
+ctest --output-on-failure
+```
+
+Catch2 v3 is provided as a system package inside the `nix develop` shell.  In environments without Nix the `CMakeLists.txt` automatically fetches it from GitHub via `FetchContent`.
 
 ---
 

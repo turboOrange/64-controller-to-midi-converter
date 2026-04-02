@@ -1,0 +1,4 @@
+# ninja log v7
+6	498	1775145784009162274	CMakeFiles/n64_midi_tester.dir/home/cedrick/project/64-controller-to-midi-converter/firmware/src/mapping.cpp.o	3f116efeda8acd97
+5	2163	1775145784008162256	CMakeFiles/n64_midi_tester.dir/main.cpp.o	101e085d4c05e1c6
+2164	2382	1775145786167201412	n64_midi_tester	66f3345c1f349930

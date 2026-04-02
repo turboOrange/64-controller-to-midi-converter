@@ -76,4 +76,46 @@ pico_enable_stdio_uart(n64_midi_converter 0)
 
 pico_add_extra_outputs(n64_midi_converter)
 
+# ─── Simulation build (Renode) ────────────────────────────────────────────────
+# Build with:  cmake -B build_sim -G Ninja -DSIMULATION=1
+#              ninja -C build_sim
+# Produces:   build_sim/n64_midi_converter_sim.elf  (loaded by Renode)
+#
+# Key differences from the production build:
+#   • n64_controller_sim.cpp replaces n64_controller.cpp (no PIO/DMA/Joybus)
+#   • -DSIMULATION=1 triggers single-core FreeRTOS in FreeRTOSConfig.h
+#   • hardware_pio / hardware_dma / joybus are not linked (not needed)
+if(SIMULATION)
+    add_executable(n64_midi_converter_sim
+        src/main.cpp
+        src/n64_controller_sim.cpp   # stub: reads N64State from SRAM @ 0x20040000
+        src/midi.cpp
+        src/mapping.cpp
+        src/controller_task.cpp
+        src/sim_overrides.c          # no-op overrides for SDK __weak init funcs
+    )
+    target_compile_definitions(n64_midi_converter_sim PRIVATE SIMULATION=1)
+    target_include_directories(n64_midi_converter_sim PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/src
+        # joybus/n64.h is needed by mapping.cpp for the button bitmask #defines.
+        # We only need the headers — no PIO backend is compiled.
+        ${CMAKE_CURRENT_LIST_DIR}/lib/libjoybus/include
+    )
+    target_link_libraries(n64_midi_converter_sim
+        pico_stdlib
+        hardware_pio        # header-only — satisfies config.h's #include "hardware/pio.h"
+        hardware_uart
+        hardware_irq
+        hardware_gpio
+        pico_unique_id
+        midi_uart_lib
+        ring_buffer_lib
+        FreeRTOS-Kernel-Static
+        FreeRTOS-Kernel-Heap4
+    )
+    pico_enable_stdio_usb(n64_midi_converter_sim 0)
+    pico_enable_stdio_uart(n64_midi_converter_sim 0)
+    pico_add_extra_outputs(n64_midi_converter_sim)
+endif()
+
 

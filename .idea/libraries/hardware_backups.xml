@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="hardware-backups">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/hardware/hardware-backups/hardware-2026-03-04_163310.zip!/" />
+      <root url="jar://$PROJECT_DIR$/hardware/hardware-backups/hardware-2026-03-04_220228.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

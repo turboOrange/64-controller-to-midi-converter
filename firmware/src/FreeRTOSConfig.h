@@ -24,16 +24,21 @@ extern "C" {
 /// Scheduler tick at 1 kHz gives 1 ms granularity for vTaskDelayUntil().
 #define configTICK_RATE_HZ              1000UL
 
-// ─── SMP — dual-core ─────────────────────────────────────────────────────────
-
-/// Use both Cortex-M0+ cores.
-#define configNUMBER_OF_CORES           2
-
-/// Allow tasks to be pinned to a specific core via vTaskCoreAffinitySet().
-#define configUSE_CORE_AFFINITY         1
-
-/// Let tasks of different priorities run simultaneously on different cores.
-#define configRUN_MULTIPLE_PRIORITIES   1
+// ─── SMP — dual-core (or single-core for Renode simulation) ──────────────────
+// When SIMULATION=1, use a single Cortex-M0+ core to avoid the RP2040 SMP
+// inter-core FIFO / spinlock complexity in the Renode virtual environment.
+// All other firmware behaviour is identical; FreeRTOS just schedules tasks
+// on one core instead of two.
+#ifdef SIMULATION
+  #define configNUMBER_OF_CORES         1
+#else
+  /// Use both Cortex-M0+ cores.
+  #define configNUMBER_OF_CORES         2
+  /// Allow tasks to be pinned to a specific core via vTaskCoreAffinitySet().
+  #define configUSE_CORE_AFFINITY       1
+  /// Let tasks of different priorities run simultaneously on different cores.
+  #define configRUN_MULTIPLE_PRIORITIES 1
+#endif
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 

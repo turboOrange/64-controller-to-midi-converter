@@ -1,0 +1,51 @@
+# firmware/renode/n64_midi_converter.resc
+#
+# Renode startup script for the n64_midi_converter simulation.
+#
+# What this script does:
+#   1. Creates a virtual machine using the minimal RP2040 platform.
+#   2. Loads the simulation ELF (built with cmake -DSIMULATION=1).
+#   3. Sets the CPU's initial SP and PC from the firmware's vector table
+#      at 0x10000100 (the pico-sdk places it there after the 256-byte boot2
+#      stub at 0x10000000).
+#   4. Exposes UART1 (MIDI output) on TCP port 4445 via a server socket
+#      terminal so the Python tester can read raw MIDI bytes.
+#   5. Runs the simulation as fast as possible (not locked to wall clock).
+#
+# The script intentionally does NOT call "start" -- the Python tester
+# connects to the UART socket first and then issues "start" through the
+# monitor so no initial Program-Change bytes are lost.
+#
+# Usage (launched by tester.py, or manually for debugging):
+#   renode --port 1234 --disable-xwt firmware/renode/n64_midi_converter.resc
+
+# -- Machine -------------------------------------------------------------------
+mach create "n64_midi_converter"
+machine LoadPlatformDescription @${ORIGIN}/rp2040_sim.repl
+
+# -- Firmware ELF --------------------------------------------------------------
+sysbus LoadELF @${ORIGIN}/../build_sim/n64_midi_converter_sim.elf
+
+# -- Initial CPU state ---------------------------------------------------------
+# Read the initial stack pointer and reset-handler address directly from the
+# pico-sdk vector table that the linker placed at 0x10000100 (first word =
+# initial SP, second word = reset handler with Thumb bit set).
+# This bypasses the need for a boot ROM at address 0x00000000.
+cpu SP `sysbus ReadDoubleWord 0x10000100`
+cpu PC `sysbus ReadDoubleWord 0x10000104`
+
+# -- MIDI UART socket ----------------------------------------------------------
+# Create a TCP server on port 4445.  Every byte midi_uart_lib writes to
+# UART1's TX FIFO is forwarded to any connected client as a raw byte.
+# The Python tester connects here to receive and decode the MIDI stream.
+emulation CreateServerSocketTerminal 4445 "uart1_socket" false
+connector Connect sysbus.uart1 uart1_socket
+
+# -- Simulation speed ----------------------------------------------------------
+# Run at maximum simulation speed so FreeRTOS task delays return quickly
+# and the tester feels responsive.
+machine SetAdvanceImmediately true
+
+# -- DO NOT call "start" here --------------------------------------------------
+# tester.py sends "start" via the monitor after it has connected to the
+# UART socket, ensuring no bytes are lost during the connection window.

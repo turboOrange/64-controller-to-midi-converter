@@ -1,0 +1,134 @@
+// firmware/renode/rp2040_sim.repl
+//
+// Minimal RP2040 platform description for the n64_midi_converter simulation.
+//
+// Uses a single Cortex-M0+ core (the SIMULATION=1 build disables SMP in
+// FreeRTOS) to keep the platform simple and avoid inter-core FIFO
+// complexity.  All peripherals that the Pico SDK touches during init but
+// that are not functionally needed for the sim are backed by
+// Memory.ArrayMemory — reads return 0, writes are silently accepted.
+// Key "ready" status bits are overlaid with Tags so SDK wait loops exit
+// immediately instead of spinning forever.
+//
+// UART1 is the only real peripheral: it uses Renode's PL011 model to
+// receive the MIDI bytes produced by midi_uart_lib and forward them to
+// the socket terminal the Python tester connects to.
+
+// ─── Memory ──────────────────────────────────────────────────────────────────
+
+// RP2040 boot ROM stub at 0x00000000 (16 KB).
+// Reads return 0x00000000 so any residual rom_func_lookup() call gets a null
+// function pointer rather than a HardFault.  The real bootrom init functions
+// (runtime_init_bootrom_reset / runtime_init_per_core_bootrom_reset) are
+// overridden with no-ops in sim_overrides.c so this stub is a safety net only.
+bootrom: Memory.MappedMemory @ sysbus 0x00000000
+    size: 0x4000        // 16 KB — matches real RP2040 boot ROM size
+
+flash: Memory.MappedMemory @ sysbus 0x10000000
+    size: 0x200000      // 2 MB XIP flash
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x42000       // 264 KB SRAM  (includes SimSlot region at 0x20040000)
+
+// ─── CPU ─────────────────────────────────────────────────────────────────────
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    -> cpu@0
+    systickFrequency: 125000000     // RP2040 default 125 MHz system clock
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m0+"
+    nvic: nvic
+
+// ─── MIDI UART ───────────────────────────────────────────────────────────────
+// UART1 at 0x40038000, IRQ 21 in the RP2040 interrupt table.
+// The Python tester connects to the socket terminal wired to this peripheral
+// and receives every raw byte that midi_uart_lib writes.
+
+uart1: UART.PL011 @ sysbus 0x40038000
+    -> nvic@21
+
+// ─── Peripheral stubs ────────────────────────────────────────────────────────
+// Memory.ArrayMemory: reads return 0x00000000, writes are silently discarded.
+// These cover every peripheral address range the Pico SDK accesses during
+// clock/reset/GPIO initialisation so the firmware does not fault on bus errors.
+//
+// IMPORTANT: every RP2040 peripheral occupies 0x4000 (16 KB) of address space:
+//   base + 0x0000  RW alias (normal read/write)
+//   base + 0x1000  XOR alias (hw_xor_bits)
+//   base + 0x2000  SET alias (hw_set_bits)
+//   base + 0x3000  CLR alias (hw_clear_bits)
+// All stubs MUST be 0x4000 bytes so the atomic aliases are also mapped.
+// Without this, any hw_set_bits/hw_clear_bits call faults on an unmapped
+// bus address → HardFault before main() is ever reached.
+
+resets:     Memory.ArrayMemory @ sysbus 0x4000C000 { size: 0x4000 }
+clocks_hw:  Memory.ArrayMemory @ sysbus 0x40008000 { size: 0x4000 }
+io_bank0:   Memory.ArrayMemory @ sysbus 0x40014000 { size: 0x4000 }
+pads_bank0: Memory.ArrayMemory @ sysbus 0x4001C000 { size: 0x4000 }
+xosc:       Memory.ArrayMemory @ sysbus 0x40024000 { size: 0x4000 }
+pll_sys:    Memory.ArrayMemory @ sysbus 0x40028000 { size: 0x4000 }
+pll_usb:    Memory.ArrayMemory @ sysbus 0x4002C000 { size: 0x4000 }
+uart0_stub: Memory.ArrayMemory @ sysbus 0x40034000 { size: 0x4000 }
+timer_hw:   Memory.ArrayMemory @ sysbus 0x40054000 { size: 0x4000 }
+watchdog:   Memory.ArrayMemory @ sysbus 0x40058000 { size: 0x4000 }
+rosc:       Memory.ArrayMemory @ sysbus 0x40060000 { size: 0x4000 }
+pio0_stub:  Memory.ArrayMemory @ sysbus 0x50200000 { size: 0x4000 }
+pio1_stub:  Memory.ArrayMemory @ sysbus 0x50300000 { size: 0x4000 }
+dma_stub:   Memory.ArrayMemory @ sysbus 0x50000000 { size: 0x4000 }
+sio_hw:     Memory.ArrayMemory @ sysbus 0xD0000000 { size: 0x200  }
+// UART1 atomic aliases — the Renode PL011 model handles the base RW alias at
+// 0x40038000, but the SDK's hw_set_bits / hw_clear_bits write to +0x1000
+// (XOR), +0x2000 (SET), +0x3000 (CLR).  These stubs silently absorb those
+// writes so uart_set_irq_enables / uart_set_format don't HardFault.
+uart1_xor:  Memory.ArrayMemory @ sysbus 0x40039000 { size: 0x1000 }
+uart1_set:  Memory.ArrayMemory @ sysbus 0x4003A000 { size: 0x1000 }
+uart1_clr:  Memory.ArrayMemory @ sysbus 0x4003B000 { size: 0x1000 }
+// SYSCFG stub — SDK touches syscfg registers during early init.
+syscfg:     Memory.ArrayMemory @ sysbus 0x40004000 { size: 0x4000 }
+// USB controller + DPRAM — safety net for stray USB register access.
+usb_dpram:  Memory.ArrayMemory @ sysbus 0x50100000 { size: 0x10000 }
+usb_ctrl:   Memory.ArrayMemory @ sysbus 0x50110000 { size: 0x10000 }
+
+// ─── Clock-ready tag overlays ─────────────────────────────────────────────────
+// Tags take read priority over the ArrayMemory at the same address.
+// They force specific register bits high so the Pico SDK's clock-init
+// polling loops (while (!(reg & READY_BIT))) exit immediately.
+
+sysbus:
+    init:
+        // RESETS_RESET_DONE (0x4000C008): all peripherals appear out of reset
+        Tag <0x4000C008 4> "RESETS_RESET_DONE"  0xFFFFFFFF
+
+        // XOSC_STATUS (0x40024004): stable bit (31) set → crystal ready
+        Tag <0x40024004 4> "XOSC_STATUS"         0xFFFFFFFF
+
+        // PLL_SYS_CS (0x40028000): lock bit (31) set → PLL locked
+        Tag <0x40028000 4> "PLL_SYS_CS"          0xFFFFFFFF
+
+        // PLL_USB_CS (0x4002C000): lock bit (31) set → USB PLL locked
+        Tag <0x4002C000 4> "PLL_USB_CS"          0xFFFFFFFF
+
+        // CLK_REF_SELECTED (0x40008038): bit 0 set → reference clock selected.
+        // The SDK polls `while (selected != 0x1)` — must return exactly 0x1.
+        Tag <0x40008038 4> "CLK_REF_SELECTED"    0x00000001
+
+        // CLK_SYS_SELECTED (0x40008044): bit 0 set → system clock selected.
+        Tag <0x40008044 4> "CLK_SYS_SELECTED"    0x00000001
+
+        // CLK_PERI_CTRL (0x40008048): ENABLE bit set, SYS clock source
+        Tag <0x40008048 4> "CLK_PERI_CTRL"       0x00000880
+
+        // SIO CPUID (0xD0000000): return 0 for core 0 (only one core in sim)
+        Tag <0xD0000000 4> "SIO_CPUID"            0x00000000
+
+        // SIO spinlocks (0xD0000100, 32 × 4 = 128 bytes):
+        // In real hardware a read returns the lock number (non-zero) when the
+        // spinlock is available, or 0 when already claimed.  ArrayMemory would
+        // always return 0 ("taken"), making spin_lock_unsafe_blocking() loop
+        // forever.  We overlay the entire spinlock bank with a non-zero tag so
+        // any claim attempt succeeds immediately.  Release writes are silently
+        // discarded by the underlying ArrayMemory, which is safe in a
+        // single-core simulation (no genuine contention ever occurs).
+        Tag <0xD0000100 0x80> "SIO_SPINLOCKS"    0x00000001
+

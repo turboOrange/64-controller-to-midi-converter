@@ -49,6 +49,19 @@
             # ── Version control & utilities ───────────────────────────────────
             git         # manage submodules under firmware/lib/
             minicom     # serial monitor — useful for UART debug output
+
+            # ── Host-side tools (native x86/x64) ──────────────────────────────
+            # Required by firmware/tools/n64_midi_tester (interactive tester)
+            ncurses     # TUI library for the interactive MIDI tester UI
+            pkg-config  # lets CMake resolve the Nix store ncurses path
+            fluidsynth  # optional: software synth for hearing MIDI output
+
+            # ── Unit testing ──────────────────────────────────────────────────
+            # Catch2 v3 — used by firmware/tests/ (host-side, no hardware needed)
+            catch2_3    # provides the Catch2::Catch2WithMain CMake target
+
+            # ── Renode simulation ─────────────────────────────────────────────
+            renode      # hardware emulator for the Renode-backed tester
           ];
 
           shellHook = ''
@@ -66,6 +79,10 @@
             echo "────────────────────────────────────────────────────────────"
             echo "  Build       :  cd firmware && cmake -B build -G Ninja && ninja -C build"
             echo "  Flash (UF2) :  picotool load -f firmware/build/n64_midi_converter.uf2"
+            echo "  Tester      :  cd firmware/tools/n64_midi_tester && cmake -B build -G Ninja && ninja -C build && ./build/n64_midi_tester"
+            echo "  Sim build   :  cd firmware && cmake -B build_sim -G Ninja -DSIMULATION=1 -DCMAKE_TOOLCHAIN_FILE=\$PICO_SDK_PATH/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake && ninja -C build_sim"
+            echo "  Renode test :  python3 firmware/tools/renode_tester/tester.py"
+            echo "  Unit tests  :  cd firmware/tests && cmake -B build -G Ninja && ninja -C build && ./build/n64_midi_tests"
             echo "────────────────────────────────────────────────────────────"
             echo ""
           '';

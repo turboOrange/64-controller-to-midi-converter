@@ -1,0 +1,3 @@
+/home/cedrick/project/64-controller-to-midi-converter/firmware/tools/n64_midi_tester/build/CMakeFiles/n64_midi_tester.dir
+/home/cedrick/project/64-controller-to-midi-converter/firmware/tools/n64_midi_tester/build/CMakeFiles/edit_cache.dir
+/home/cedrick/project/64-controller-to-midi-converter/firmware/tools/n64_midi_tester/build/CMakeFiles/rebuild_cache.dir

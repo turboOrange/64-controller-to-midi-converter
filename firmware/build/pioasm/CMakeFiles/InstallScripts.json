@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/cedrick/project/64-controller-to-midi-converter/firmware/build/pioasm/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
