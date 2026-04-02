@@ -63,6 +63,21 @@ firmware/
 - PIO programs go in `/firmware/pio/` as `.pio` files compiled via `pioasm`
 - Keep the main loop deterministic and interrupt-driven where latency matters
 
+### Library preferences
+
+- **Always prefer a well-known, actively maintained library over a hand-rolled implementation.** Before writing a protocol driver, message encoder, or hardware abstraction from scratch, search for an existing library that targets the Pico SDK / RP2040 natively (not Arduino-wrapped) and has a permissive licence (MIT / Apache / BSD).
+- Evaluate candidates on: active maintenance, no dynamic allocation in hot paths, and clean CMake integration (`add_subdirectory` or `FetchContent`).
+- Add accepted libraries as **git submodules** under `firmware/lib/<library-name>` and register them in the table below.
+
+#### Approved libraries
+
+| Domain | Library | Submodule path |
+|---|---|---|
+| N64 / Joybus protocol | [`loopj/libjoybus`](https://github.com/loopj/libjoybus) | `firmware/lib/libjoybus` |
+| DIN MIDI UART (TX/RX, IRQ-driven) | [`rppicomidi/midi_uart_lib`](https://github.com/rppicomidi/midi_uart_lib) | `firmware/lib/midi_uart_lib` |
+| Ring-buffer (required by midi_uart_lib) | [`rppicomidi/ring_buffer_lib`](https://github.com/rppicomidi/ring_buffer_lib) | `firmware/lib/ring_buffer_lib` |
+| USB MIDI device | TinyUSB MIDI class (bundled with Pico SDK) | via `tinyusb_device` CMake target |
+
 ---
 
 ## N64 Controller – Joybus Protocol

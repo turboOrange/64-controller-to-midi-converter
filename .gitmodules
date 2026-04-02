@@ -1,3 +1,9 @@
 [submodule "firmware/lib/libjoybus"]
 	path = firmware/lib/libjoybus
 	url = https://github.com/loopj/libjoybus.git
+[submodule "firmware/lib/midi_uart_lib"]
+	path = firmware/lib/midi_uart_lib
+	url = https://github.com/rppicomidi/midi_uart_lib.git
+[submodule "firmware/lib/ring_buffer_lib"]
+	path = firmware/lib/ring_buffer_lib
+	url = https://github.com/rppicomidi/ring_buffer_lib.git

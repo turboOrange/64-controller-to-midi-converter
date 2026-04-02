@@ -7,8 +7,13 @@
 /// GPIO pin connected to the N64 controller data line (open-drain, 3.3 V).
 constexpr uint8_t PIN_JOYBUS     = 2;
 
-/// GPIO pin for the 5-pin DIN MIDI UART TX line.
+/// GPIO pin for the 5-pin DIN MIDI UART TX line (UART1 TX).
 constexpr uint8_t PIN_MIDI_TX    = 4;
+
+/// GPIO pin for the 5-pin DIN MIDI UART RX line (UART1 RX).
+/// Required by midi_uart_lib even when MIDI IN is not used; leave unconnected
+/// on the PCB if DIN MIDI input is not needed.
+constexpr uint8_t PIN_MIDI_RX    = 5;
 
 /// Onboard LED (Pico pin 25, or GP25 on custom PCB).
 constexpr uint8_t PIN_LED        = 25;
