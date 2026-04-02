@@ -2,6 +2,10 @@
 firmware/build/
 firmware/build_sim/
 firmware/tests/build/
+firmware/tools/**/build/
+
+# ── JetBrains IDE ─────────────────────────────────────────────────────────────
+.idea/
 
 # ── CMake generated files (outside build dirs) ────────────────────────────────
 CMakeCache.txt

@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/cedrick/project/64-controller-to-midi-converter/firmware/tools/n64_midi_tester/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
