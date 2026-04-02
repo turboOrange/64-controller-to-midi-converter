@@ -137,6 +137,55 @@ This project is a love letter to *Ocarina of Time*. When suggesting musical mapp
 
 ---
 
+## Development Environment
+
+A fully reproducible development shell is provided via **Nix flakes** in [`flake.nix`](../flake.nix) at the repository root. It installs and wires up every tool required for both firmware and hardware work:
+
+| Tool | Purpose |
+|---|---|
+| `gcc-arm-embedded` | ARM bare-metal toolchain (`arm-none-eabi-gcc/g++/objcopy/gdb/…`) |
+| `cmake` + `ninja` | Build system (CMake ≥ 3.21 required) |
+| `pico-sdk` | Raspberry Pi Pico SDK; sets `PICO_SDK_PATH` automatically via its nixpkgs setup hook; also provides `pioasm` |
+| `python3` | Required by Pico SDK CMake helper scripts |
+| `picotool` | Flash, inspect, and reboot RP2040 targets over USB |
+| `openocd` | SWD/JTAG on-chip debugging (Raspberry Pi Debug Probe, J-Link, …) |
+| `kicad` | Schematic capture and PCB layout for `/hardware/` |
+| `doxygen` | Generate API documentation from Doxygen-style comments |
+| `git` | Version control and submodule management |
+| `minicom` | Serial monitor for UART debug output |
+
+### Entering the shell
+
+```bash
+# First time only — pin nixpkgs revision (commit flake.lock to VCS)
+nix flake lock
+
+# Enter the dev shell (builds/downloads everything on first run)
+nix develop
+```
+
+After entering, the shell prints a quick-reference summary including the active `PICO_SDK_PATH` and common build commands.
+
+> **Tip — automatic activation with `direnv`:** add a `.envrc` containing `use flake` and run `direnv allow` once; the shell will activate automatically whenever you `cd` into the project.
+
+### Building the firmware from inside the shell
+
+```bash
+cd firmware
+cmake -B build -G Ninja
+ninja -C build
+# → firmware/build/n64_midi_converter.uf2
+```
+
+### Flashing
+
+```bash
+# Hold BOOTSEL while plugging in the Pico, then:
+picotool load -f firmware/build/n64_midi_converter.uf2
+```
+
+---
+
 ## Key References
 
 - [RP2040 Datasheet](https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf)
