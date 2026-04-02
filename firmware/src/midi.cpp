@@ -4,32 +4,48 @@
 // midi_uart_lib already has extern "C" guards in its header.
 #include "midi_uart_lib.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 // ─── Instance ─────────────────────────────────────────────────────────────────
 
-/// Opaque handle returned by midi_uart_configure(); held for the lifetime of
-/// the firmware. Static allocation — no heap involvement.
+/// Opaque handle returned by midi_uart_configure(); held for the firmware lifetime.
 static void *s_midi_uart = nullptr;
+
+/// Mutex that serialises multi-byte MIDI writes across all controller tasks.
+/// Without this, bytes from concurrent Note On messages on different channels
+/// would be interleaved in the TX ring buffer and corrupt the MIDI stream.
+static StaticSemaphore_t s_mutex_buf;
+static SemaphoreHandle_t s_mutex = nullptr;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Queue one or more bytes into the IRQ-driven TX ring buffer and kick the
-/// transmitter if it is idle. Non-blocking: returns immediately.
+/// Queue bytes into the IRQ-driven TX ring buffer under the MIDI mutex.
+/// Takes the mutex (blocking until free) so a complete multi-byte message
+/// is written atomically — no interleaving between concurrent tasks.
 static inline void send(const uint8_t *buf, uint8_t len)
 {
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
     midi_uart_write_tx_buffer(s_midi_uart, buf, len);
     midi_uart_drain_tx_buffer(s_midi_uart);
+    xSemaphoreGive(s_mutex);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 void midi_init()
 {
+    // Create the MIDI write mutex using static storage (no heap allocation).
+    s_mutex = xSemaphoreCreateMutexStatic(&s_mutex_buf);
+
     // Configure UART1 with IRQ-driven TX/RX ring buffers.
-    // midi_uart_lib handles uart_init(), gpio_set_function(), and IRQ setup.
     s_midi_uart = midi_uart_configure(1, PIN_MIDI_TX, PIN_MIDI_RX);
 
-    // Select the Ocarina patch at startup so the instrument is ready to play.
-    midi_program_change(MIDI_CHANNEL, MIDI_PROGRAM);
+    // Send an initial Program Change (Ocarina) on each active MIDI channel
+    // so every controller starts with the correct GM patch.
+    for (uint8_t i = 0; i < NUM_CONTROLLERS; ++i) {
+        midi_program_change(CONTROLLER_CHANNELS[i], MIDI_PROGRAM);
+    }
 }
 
 void midi_note_on(uint8_t channel, uint8_t note, uint8_t velocity)

@@ -91,14 +91,14 @@ void Mapping::on_button_pressed(uint8_t btn_index, uint8_t base_note, const N64S
     uint8_t note = effective_note(base_note);
     uint8_t vel  = joystick_velocity(state.stick_x, state.stick_y);
     m_active_note[btn_index] = note;
-    midi_note_on(MIDI_CHANNEL, note, vel);
+    midi_note_on(m_channel, note, vel);
 }
 
 void Mapping::on_button_released(uint8_t btn_index)
 {
     uint8_t note = m_active_note[btn_index];
     if (note != 0) {
-        midi_note_off(MIDI_CHANNEL, note);
+        midi_note_off(m_channel, note);
         m_active_note[btn_index] = 0;
     }
 }
@@ -121,11 +121,11 @@ void Mapping::process(const N64State &state)
     // ── Z button → Sustain pedal (CC64) ───────────────────────────────────
     if (pressed  & JOYBUS_N64_BUTTON_Z) {
         m_sustain_active = true;
-        midi_control_change(MIDI_CHANNEL, static_cast<uint8_t>(MidiCC::SustainPedal), 127);
+        midi_control_change(m_channel, static_cast<uint8_t>(MidiCC::SustainPedal), 127);
     }
     if (released & JOYBUS_N64_BUTTON_Z) {
         m_sustain_active = false;
-        midi_control_change(MIDI_CHANNEL, static_cast<uint8_t>(MidiCC::SustainPedal), 0);
+        midi_control_change(m_channel, static_cast<uint8_t>(MidiCC::SustainPedal), 0);
     }
 
     // ── L / R shoulders → Octave shift ────────────────────────────────────
@@ -138,7 +138,7 @@ void Mapping::process(const N64State &state)
 
     // ── Start → MIDI Panic ────────────────────────────────────────────────
     if (pressed & JOYBUS_N64_BUTTON_START) {
-        midi_panic(MIDI_CHANNEL);
+        midi_panic(m_channel);
         // Clear all tracked active notes.
         for (auto &n : m_active_note) n = 0;
         m_sustain_active = false;
@@ -146,10 +146,10 @@ void Mapping::process(const N64State &state)
     }
 
     // ── D-pad → Program Change (instrument select) ────────────────────────
-    if (pressed & JOYBUS_N64_BUTTON_UP)   midi_program_change(MIDI_CHANNEL, 79);  // Ocarina
-    if (pressed & JOYBUS_N64_BUTTON_DOWN) midi_program_change(MIDI_CHANNEL, 24);  // Acoustic Guitar
-    if (pressed & JOYBUS_N64_BUTTON_LEFT) midi_program_change(MIDI_CHANNEL, 10);  // Music Box
-    if (pressed & JOYBUS_N64_BUTTON_RIGHT)midi_program_change(MIDI_CHANNEL, 14);  // Tubular Bells
+    if (pressed & JOYBUS_N64_BUTTON_UP)    midi_program_change(m_channel, 79);  // Ocarina
+    if (pressed & JOYBUS_N64_BUTTON_DOWN)  midi_program_change(m_channel, 24);  // Acoustic Guitar
+    if (pressed & JOYBUS_N64_BUTTON_LEFT)  midi_program_change(m_channel, 10);  // Music Box
+    if (pressed & JOYBUS_N64_BUTTON_RIGHT) midi_program_change(m_channel, 14);  // Tubular Bells
 
     // ── Joystick → Pitch Bend (X-axis) + Modulation (Y-axis) ─────────────
     {
@@ -157,15 +157,15 @@ void Mapping::process(const N64State &state)
         int8_t y = state.stick_y;
 
         if (abs(x) > JOYSTICK_DEADZONE) {
-            midi_pitch_bend(MIDI_CHANNEL, axis_to_pitch_bend(x));
+            midi_pitch_bend(m_channel, axis_to_pitch_bend(x));
         } else {
-            midi_pitch_bend(MIDI_CHANNEL, 0);  // Snap back to centre.
+            midi_pitch_bend(m_channel, 0);  // Snap back to centre.
         }
 
         uint8_t mod = (abs(y) > JOYSTICK_DEADZONE)
             ? static_cast<uint8_t>((static_cast<uint16_t>(abs(y)) * 127u) / JOYSTICK_MAX)
             : 0;
-        midi_control_change(MIDI_CHANNEL, static_cast<uint8_t>(MidiCC::Modulation), mod);
+        midi_control_change(m_channel, static_cast<uint8_t>(MidiCC::Modulation), mod);
     }
 
     m_prev = state;

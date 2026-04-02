@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
+#include "config.h"
 
 /**
  * @brief Snapshot of a single N64 controller poll.
@@ -12,29 +12,34 @@
  * directly.
  */
 struct N64State {
-    uint16_t buttons;   ///< Bitmask of pressed buttons (see JOYBUS_N64_BUTTON_* constants).
+    uint16_t buttons;   ///< Bitmask of pressed buttons (JOYBUS_N64_BUTTON_* constants).
     int8_t   stick_x;   ///< Joystick X axis, signed –128…+127 (positive = right).
     int8_t   stick_y;   ///< Joystick Y axis, signed –128…+127 (positive = up).
 };
 
 /**
- * @brief Initialise the N64 Joybus interface on the configured GPIO/PIO.
+ * @brief Initialise one N64 Joybus interface on its configured GPIO/PIO.
  *
- * Must be called once before any polling. Uses PIN_JOYBUS from config.h and
- * pio0. The RP2xxx PIO backend handles all timing-critical Joybus signalling.
+ * Must be called once per controller index, sequentially from a single core
+ * before the FreeRTOS scheduler starts. Uses CONTROLLER_PINS[idx] and
+ * JOYBUS_PIO_INSTANCE from config.h; each call claims one free PIO state
+ * machine from the shared PIO instance.
  *
+ * @param idx  Controller index (0 … NUM_CONTROLLERS-1).
  * @return true on success, false if PIO resources could not be claimed.
  */
-bool n64_controller_init();
+bool n64_controller_init(uint8_t idx);
 
 /**
- * @brief Poll the N64 controller and update the provided state struct.
+ * @brief Poll one N64 controller and update the provided state struct.
  *
- * This is a synchronous wrapper around the async libjoybus API, suitable for
- * use in a simple super-loop. Should be called at POLL_INTERVAL_MS cadence.
+ * Designed to be called from a FreeRTOS task at POLL_INTERVAL_MS cadence.
+ * Instead of spin-waiting, this function blocks the calling task via a
+ * FreeRTOS task notification until the PIO IRQ signals transfer completion
+ * (or a 5 ms safety timeout elapses).
  *
- * @param[out] state  Destination for the latest controller state.
- * @return true if a valid response was received, false on Joybus error.
+ * @param idx    Controller index (0 … NUM_CONTROLLERS-1).
+ * @param state  Destination for the latest controller state.
+ * @return true if a valid response was received, false on error or timeout.
  */
-bool n64_controller_poll(N64State &state);
-
+bool n64_controller_poll(uint8_t idx, N64State &state);

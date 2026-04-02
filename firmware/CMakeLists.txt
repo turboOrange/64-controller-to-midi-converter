@@ -1,32 +1,45 @@
 cmake_minimum_required(VERSION 3.21)
 
-# Pull in the Pico SDK (must be done before project())
+# ─── SDK path ─────────────────────────────────────────────────────────────────
+# Support both the environment variable (Nix dev-shell / CI) and an explicit
+# -DPICO_SDK_PATH=... cmake argument for IDE / out-of-shell invocations.
+if (DEFINED PICO_SDK_PATH AND NOT DEFINED ENV{PICO_SDK_PATH})
+    set(ENV{PICO_SDK_PATH} "${PICO_SDK_PATH}")
+endif ()
+
+# Pull in the Pico SDK (must be before project())
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 project(n64_midi_converter C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-# Default board — override on the cmake command line if using a custom PCB:
-#   cmake -DPICO_BOARD=my_board ..
 if(NOT DEFINED PICO_BOARD)
     set(PICO_BOARD pico)
 endif()
 
-# Initialise the Pico SDK
+# Initialise the Pico SDK — sets PICO_PLATFORM to "rp2040"
 pico_sdk_init()
 
+# ─── FreeRTOS-Kernel ─────────────────────────────────────────────────────────
+# Submodule at firmware/lib/FreeRTOS-Kernel (RP2040 SMP port, V11.0.1+).
+# We use add_subdirectory directly after pico_sdk_init() so that PICO_PLATFORM
+# is already "rp2040" and the port's own pico_sdk_import.cmake guard fires
+# correctly (PICO_SDK_PATH cmake variable is already set by pico_sdk_init()).
+# FreeRTOSConfig.h lives in src/ — passed via FREERTOS_CONFIG_FILE_DIRECTORY.
+set(FREERTOS_KERNEL_PATH      ${CMAKE_CURRENT_LIST_DIR}/lib/FreeRTOS-Kernel)
+set(FREERTOS_CONFIG_FILE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/src CACHE PATH
+    "Directory that contains FreeRTOSConfig.h")
+add_subdirectory(
+    ${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040
+    FREERTOS_KERNEL
+)
+
 # ─── libjoybus ───────────────────────────────────────────────────────────────
-# Select the RP2xxx PIO backend (must be CACHE INTERNAL to propagate into the
-# subdirectory scope where libjoybus' CMakeLists.txt checks DEFINED).
 set(JOYBUS_BACKEND_RP2XXX 1 CACHE INTERNAL "")
 add_subdirectory(lib/libjoybus)
 
 # ─── rppicomidi/ring_buffer_lib + midi_uart_lib ───────────────────────────────
-# ring_buffer_lib must be added before midi_uart_lib because midi_uart_lib's
-# own CMakeLists.txt does add_subdirectory(../ring_buffer_lib ...) using a
-# relative path; adding it here first satisfies the if(NOT TARGET) guard and
-# avoids a duplicate-target error.
 add_subdirectory(lib/ring_buffer_lib)
 add_subdirectory(lib/midi_uart_lib)
 
@@ -36,10 +49,11 @@ add_executable(n64_midi_converter
     src/n64_controller.cpp
     src/midi.cpp
     src/mapping.cpp
+    src/controller_task.cpp
 )
 
 target_include_directories(n64_midi_converter PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src   # also provides midi_uart_lib_config.h
+    ${CMAKE_CURRENT_LIST_DIR}/src   # FreeRTOSConfig.h + midi_uart_lib_config.h + ring_buffer_lib_config.h
 )
 
 target_link_libraries(n64_midi_converter
@@ -47,15 +61,19 @@ target_link_libraries(n64_midi_converter
     hardware_pio
     hardware_dma
     hardware_irq
+    hardware_gpio
     pico_unique_id
-    joybus           # loopj/libjoybus (RP2xxx PIO backend)
-    midi_uart_lib    # rppicomidi/midi_uart_lib (IRQ-driven UART MIDI TX/RX)
-    ring_buffer_lib  # rppicomidi/ring_buffer_lib (required by midi_uart_lib)
+    joybus                 # loopj/libjoybus (RP2xxx PIO backend)
+    midi_uart_lib          # rppicomidi/midi_uart_lib (IRQ-driven UART MIDI TX/RX)
+    ring_buffer_lib        # rppicomidi/ring_buffer_lib (required by midi_uart_lib)
+    FreeRTOS-Kernel-Static # RP2040 SMP FreeRTOS + configSUPPORT_STATIC_ALLOCATION
+    FreeRTOS-Kernel-Heap4  # heap_4 fallback allocator
 )
 
 # USB stdio off; UART stdio off — UART1 is fully owned by midi_uart_lib.
 pico_enable_stdio_usb(n64_midi_converter 0)
 pico_enable_stdio_uart(n64_midi_converter 0)
 
-# Create UF2 / bin / hex artefacts
 pico_add_extra_outputs(n64_midi_converter)
+
+

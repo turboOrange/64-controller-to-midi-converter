@@ -10,78 +10,102 @@ extern "C" {
 
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-// ─── Internal libjoybus state ─────────────────────────────────────────────────
+// ─── Per-instance state ───────────────────────────────────────────────────────
 
-static struct joybus_rp2xxx  s_rp2xxx_bus;
-static struct joybus        *s_bus = JOYBUS(&s_rp2xxx_bus);
+/**
+ * @brief All state owned by a single Joybus controller instance.
+ *
+ * Statically allocated — one slot per controller, zero heap involvement.
+ */
+struct ControllerInst {
+    struct joybus_rp2xxx rp2xxx_bus;             ///< libjoybus RP2xxx backend struct.
+    struct joybus       *bus;                    ///< Generic bus pointer (= JOYBUS(&rp2xxx_bus)).
+    uint8_t              response[JOYBUS_BLOCK_SIZE]; ///< Raw DMA receive buffer.
+    volatile int         transfer_result;        ///< Set by ISR callback; 0 or error code.
+    TaskHandle_t         task_handle;            ///< Calling task, updated each poll().
+};
 
-/// Raw response buffer — sized for JOYBUS_BLOCK_SIZE as required by libjoybus.
-static uint8_t s_response[JOYBUS_BLOCK_SIZE];
+static ControllerInst s_inst[NUM_CONTROLLERS];
 
-// ─── Callback plumbing ────────────────────────────────────────────────────────
+// ─── ISR callback ─────────────────────────────────────────────────────────────
 
-/// Indicates whether the most recent async transfer has completed.
-static volatile bool s_transfer_done  = false;
-
-/// 0 on success, negative libjoybus error code on failure.
-static volatile int  s_transfer_result = 0;
-
+/**
+ * @brief Called from the PIO/alarm ISR when a Joybus transfer completes.
+ *
+ * Stores the result and wakes the blocked controller task via a FreeRTOS
+ * task notification — no spin-waiting required.
+ */
 static void transfer_cb(struct joybus *bus, int result, void *user_data)
 {
     (void)bus;
-    (void)user_data;
-    s_transfer_result = result;
-    s_transfer_done   = true;
+    auto *inst = static_cast<ControllerInst *>(user_data);
+    inst->transfer_result = result;
+
+    BaseType_t higher_prio_task_woken = pdFALSE;
+    vTaskNotifyGiveFromISR(inst->task_handle, &higher_prio_task_woken);
+    portYIELD_FROM_ISR(higher_prio_task_woken);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-bool n64_controller_init()
+bool n64_controller_init(uint8_t idx)
 {
-    int rc = joybus_rp2xxx_init(&s_rp2xxx_bus, PIN_JOYBUS, pio0);
+    if (idx >= NUM_CONTROLLERS) {
+        return false;
+    }
+
+    ControllerInst &inst = s_inst[idx];
+    inst.bus = JOYBUS(&inst.rp2xxx_bus);
+
+    // Assign the GPIO pin from config and share pio0 across all instances.
+    int rc = joybus_rp2xxx_init(&inst.rp2xxx_bus, CONTROLLER_PINS[idx], JOYBUS_PIO_INSTANCE);
     if (rc < 0) {
         return false;
     }
 
-    joybus_enable(s_bus);
+    joybus_enable(inst.bus);
     return true;
 }
 
-bool n64_controller_poll(N64State &state)
+bool n64_controller_poll(uint8_t idx, N64State &state)
 {
-    s_transfer_done   = false;
-    s_transfer_result = 0;
+    if (idx >= NUM_CONTROLLERS) {
+        return false;
+    }
 
-    int rc = joybus_n64_read(s_bus, s_response, transfer_cb, nullptr);
+    ControllerInst &inst = s_inst[idx];
+
+    // Record the calling task so the ISR knows which task to notify.
+    inst.task_handle     = xTaskGetCurrentTaskHandle();
+    inst.transfer_result = 0;
+
+    // Drain any stale notification that might be pending from a previous cycle.
+    ulTaskNotifyTake(pdTRUE, 0);
+
+    int rc = joybus_n64_read(inst.bus, inst.response, transfer_cb, &inst);
     if (rc < 0) {
         return false;
     }
 
-    // Spin-wait for the async callback — the Joybus transfer takes ~200 µs at
-    // 1 Mbps, so this tight loop is acceptable at our 100 Hz poll rate.
-    uint32_t deadline_us = time_us_32() + 5000u;  // 5 ms safety timeout
-    while (!s_transfer_done) {
-        if (time_us_32() > deadline_us) {
-            return false;  // Timed out — controller likely disconnected.
-        }
+    // Block this task until the ISR signals completion (5 ms safety timeout).
+    // Unlike the old spin-wait, this yields the CPU to other runnable tasks.
+    const uint32_t notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5));
+    if (notified == 0) {
+        return false;  // Timeout — controller likely disconnected.
     }
 
-    if (s_transfer_result < 0) {
+    if (inst.transfer_result < 0) {
         return false;
     }
 
-    // The N64 controller read response is 4 bytes:
-    //   [0] high byte of button word  (bits 15–8)
-    //   [1] low  byte of button word  (bits  7–0)
-    //   [2] stick X (signed)
-    //   [3] stick Y (signed)
-    // libjoybus DMA delivers them big-endian in s_response[].
-    const auto *raw = reinterpret_cast<const joybus_n64_controller_input *>(s_response);
+    // Parse the 4-byte N64 response: [buttons_hi, buttons_lo, stick_x, stick_y].
+    const auto *raw = reinterpret_cast<const joybus_n64_controller_input *>(inst.response);
     state.buttons = raw->buttons;
     state.stick_x = static_cast<int8_t>(raw->stick_x);
     state.stick_y = static_cast<int8_t>(raw->stick_y);
 
     return true;
 }
-

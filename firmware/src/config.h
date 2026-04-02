@@ -1,11 +1,25 @@
 #pragma once
 
 #include <stdint.h>
+#include "hardware/pio.h"   // PIO type used in JOYBUS_PIO_INSTANCE
+
+// ─── Multi-Controller ────────────────────────────────────────────────────────
+
+/// Number of simultaneously supported N64 controllers (one MIDI channel each).
+constexpr uint8_t NUM_CONTROLLERS = 4;
+
+/// Joybus data-line GPIO for each controller (open-drain, 3.3 V).
+/// GPIO 4 and 5 are reserved for MIDI UART TX/RX — keep clear.
+constexpr uint8_t CONTROLLER_PINS[NUM_CONTROLLERS] = {2, 3, 6, 7};
+
+/// MIDI output channel per controller (0-indexed: 0 = ch 1 … 3 = ch 4).
+constexpr uint8_t CONTROLLER_CHANNELS[NUM_CONTROLLERS] = {0, 1, 2, 3};
+
+/// PIO instance shared by all four Joybus state machines.
+/// pio0 has exactly four state machines — one per controller.
+#define JOYBUS_PIO_INSTANCE pio0
 
 // ─── GPIO Pin Assignments ────────────────────────────────────────────────────
-
-/// GPIO pin connected to the N64 controller data line (open-drain, 3.3 V).
-constexpr uint8_t PIN_JOYBUS     = 2;
 
 /// GPIO pin for the 5-pin DIN MIDI UART TX line (UART1 TX).
 constexpr uint8_t PIN_MIDI_TX    = 4;
@@ -15,7 +29,7 @@ constexpr uint8_t PIN_MIDI_TX    = 4;
 /// on the PCB if DIN MIDI input is not needed.
 constexpr uint8_t PIN_MIDI_RX    = 5;
 
-/// Onboard LED (Pico pin 25, or GP25 on custom PCB).
+/// Onboard LED (Pico GP25 / custom PCB equivalent).
 constexpr uint8_t PIN_LED        = 25;
 
 // ─── MIDI Settings ───────────────────────────────────────────────────────────
@@ -26,10 +40,7 @@ constexpr uint8_t PIN_LED        = 25;
 /// MIDI baud rate — fixed at 31 250 baud per MIDI 1.0 spec.
 constexpr uint32_t MIDI_BAUD     = 31250;
 
-/// Default MIDI channel (0-indexed, so channel 1 = 0x00).
-constexpr uint8_t MIDI_CHANNEL   = 0x00;
-
-/// Default MIDI program: GM #80 Ocarina (0-indexed → 79).
+/// Default MIDI program per controller: GM #80 Ocarina (0-indexed → 79).
 constexpr uint8_t MIDI_PROGRAM   = 79;
 
 // ─── Note Mapping ────────────────────────────────────────────────────────────
@@ -72,6 +83,23 @@ constexpr uint16_t MIDI_CLOCK_BPM = 120;
 
 // ─── Controller Polling ──────────────────────────────────────────────────────
 
-/// How often to poll the N64 controller, in milliseconds.
-constexpr uint16_t POLL_INTERVAL_MS = 10;  // 100 Hz
+/// How often each controller task polls its N64 controller, in milliseconds.
+/// 10 ms = 100 Hz, matching the original OoT polling cadence.
+constexpr uint16_t POLL_INTERVAL_MS = 10;
+
+// ─── FreeRTOS Task Configuration ─────────────────────────────────────────────
+
+/// Stack size in 32-bit words for each controller task.
+/// 512 words = 2 KB — generous for Mapping state + libjoybus call overhead.
+constexpr uint16_t CONTROLLER_TASK_STACK_WORDS = 512;
+
+/// FreeRTOS priority for controller tasks.
+constexpr uint8_t CONTROLLER_TASK_PRIORITY = 2;
+
+/// Stack size in 32-bit words for the optional MIDI real-time clock task.
+constexpr uint16_t MIDI_CLOCK_TASK_STACK_WORDS = 256;
+
+/// FreeRTOS priority for the MIDI clock task.
+/// Slightly higher than controller tasks so clock ticks are not delayed.
+constexpr uint8_t MIDI_CLOCK_TASK_PRIORITY = 3;
 

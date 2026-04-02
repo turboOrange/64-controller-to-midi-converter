@@ -77,6 +77,7 @@ firmware/
 | DIN MIDI UART (TX/RX, IRQ-driven) | [`rppicomidi/midi_uart_lib`](https://github.com/rppicomidi/midi_uart_lib) | `firmware/lib/midi_uart_lib` |
 | Ring-buffer (required by midi_uart_lib) | [`rppicomidi/ring_buffer_lib`](https://github.com/rppicomidi/ring_buffer_lib) | `firmware/lib/ring_buffer_lib` |
 | USB MIDI device | TinyUSB MIDI class (bundled with Pico SDK) | via `tinyusb_device` CMake target |
+| RTOS (SMP, dual-core RP2040) | [`FreeRTOS/FreeRTOS-Kernel`](https://github.com/FreeRTOS/FreeRTOS-Kernel) V11 | `firmware/lib/FreeRTOS-Kernel` |
 
 ---
 

@@ -52,14 +52,17 @@
           ];
 
           shellHook = ''
-            # pico-sdk's nixpkgs setup hook exports PICO_SDK_PATH automatically;
-            # print a brief environment summary on shell entry.
+            # The nixpkgs pico-sdk package setup hook only runs inside derivation
+            # builds.  Export PICO_SDK_PATH explicitly here so cmake can find the
+            # SDK in interactive shells AND in `nix develop --command` invocations.
+            export PICO_SDK_PATH="${pkgs.pico-sdk}/lib/pico-sdk"
+
             echo ""
             echo "🎵  64-Controller-to-MIDI — dev shell ready"
             echo "────────────────────────────────────────────────────────────"
             printf "  Toolchain  : %s\n" "$(arm-none-eabi-gcc --version | head -1)"
             printf "  CMake      : %s\n" "$(cmake --version | head -1)"
-            printf "  Pico SDK   : %s\n" "''${PICO_SDK_PATH:-<not set — check pico-sdk package>}"
+            printf "  Pico SDK   : %s\n" "''${PICO_SDK_PATH}"
             echo "────────────────────────────────────────────────────────────"
             echo "  Build       :  cd firmware && cmake -B build -G Ninja && ninja -C build"
             echo "  Flash (UF2) :  picotool load -f firmware/build/n64_midi_converter.uf2"

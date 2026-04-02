@@ -11,7 +11,15 @@
  */
 class Mapping {
 public:
-    Mapping() = default;
+    /**
+     * @brief Construct a mapper bound to a specific MIDI output channel.
+     *
+     * Each controller task owns one Mapping instance; passing the channel at
+     * construction time avoids any shared mutable state between tasks.
+     *
+     * @param channel  MIDI channel (0–15) for all output from this mapper.
+     */
+    explicit Mapping(uint8_t channel) : m_channel(channel) {}
 
     /// Number of note-producing buttons (A, B, C-Up/Down/Left/Right).
     static constexpr uint8_t NUM_NOTE_BUTTONS = 6;
@@ -41,6 +49,9 @@ private:
 
     // ── Z-button (sustain pedal) state ────────────────────────────────────
     bool m_sustain_active{false};
+
+    // ── MIDI output channel bound at construction ─────────────────────────
+    uint8_t m_channel{0};
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
