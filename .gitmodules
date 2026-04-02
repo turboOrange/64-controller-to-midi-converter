@@ -1,0 +1,3 @@
+[submodule "firmware/lib/libjoybus"]
+	path = firmware/lib/libjoybus
+	url = https://github.com/loopj/libjoybus.git
